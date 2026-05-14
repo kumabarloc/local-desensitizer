@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from src.models.models import Snapshot, Session as SessionRecord
@@ -49,7 +50,7 @@ class SnapshotService:
     def get_snapshot(self, snapshot_id: str) -> Optional[Snapshot]:
         """获取快照"""
         return self.db.execute(
-            # type: ignore
+            select(Snapshot).where(Snapshot.id == snapshot_id)
         ).scalar_one_or_none()
 
     def load_mappings(self, snapshot_id: str) -> list[dict]:
@@ -62,8 +63,9 @@ class SnapshotService:
 
     def list_snapshots(self) -> list[Snapshot]:
         """列出所有快照"""
-        from sqlalchemy import select
-        return list(self.db.execute(select(Snapshot).order_by(Snapshot.created_at.desc())).scalars().all())
+        return list(self.db.execute(
+            select(Snapshot).order_by(Snapshot.created_at.desc())
+        ).scalars().all())
 
     def delete_snapshot(self, snapshot_id: str) -> None:
         """删除快照"""
@@ -121,8 +123,9 @@ class SessionService:
 
     def get_session(self, session_id: str) -> Optional[SessionRecord]:
         """获取会话"""
-        from sqlalchemy import select
-        return self.db.execute(select(SessionRecord).where(SessionRecord.id == session_id)).scalar_one_or_none()
+        return self.db.execute(
+            select(SessionRecord).where(SessionRecord.id == session_id)
+        ).scalar_one_or_none()
 
     def update_status(self, session_id: str, status: str, stats: Optional[dict] = None) -> None:
         """更新会话状态"""
@@ -140,7 +143,6 @@ class SessionService:
         limit: int = 50
     ) -> list[SessionRecord]:
         """列出会话历史"""
-        from sqlalchemy import select
         stmt = select(SessionRecord)
         if operation_type:
             stmt = stmt.where(SessionRecord.operation_type == operation_type)

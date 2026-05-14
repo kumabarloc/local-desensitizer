@@ -3,6 +3,7 @@ import re
 import json
 from pathlib import Path
 from typing import Optional
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy import select
@@ -33,16 +34,6 @@ class RestoreResult:
     unreplaced: list[str]  # 有代号但找不到映射的
     nested_warnings: list[str]  # 还原后再次出现代号的
     stats: dict
-
-
-@dataclass
-class UnmatchedItem:
-    """未匹配的代号项"""
-    placeholder: str
-    position: int  # 在文本中的位置
-
-
-from dataclasses import dataclass
 
 
 class RestoreService:
@@ -81,12 +72,36 @@ class RestoreService:
 
         # 找出所有代号及其位置
         all_placeholders = extract_placeholders(result)
-        replacement_map: dict[int, tuple[int, int, str]] = {}  # position → (start, end, replacement)
+        replacement_map: dict[int, tuple[int, int, str]] = {}
 
         for ph in all_placeholders:
             if ph not in mappings:
                 unreplaced.append(ph)
                 continue
+
+            original = mappings[ph]
+            pos = 0
+            while True:
+                idx = result.find(ph, pos)
+                if idx == -1:
+                    break
+                replacement_map[idx] = (idx, idx + len(ph), original)
+                pos = idx + 1
+
+        # 按位置从后往前替换
+        for idx in sorted(replacement_map.keys(), reverse=True):
+            start, end, replacement = replacement_map[idx]
+            result = result[:start] + replacement + result[end:]
+
+        # 检查还原后是否再次出现代号格式
+        after_placeholders = extract_placeholders(result)
+        for ph in after_placeholders:
+            nested_warnings.append(f"还原后文本再次出现代号: {ph}")
+
+        return RestoreResult(
+            restored_text=result,
+            unreplaced=unreplaced,
+            nested_warnings=nested_warnings,
             stats={
                 "total_placeholders": len(all_placeholders),
                 "replaced": len(all_placeholders) - len(unreplaced),

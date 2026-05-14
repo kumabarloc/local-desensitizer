@@ -3,7 +3,7 @@ import re
 import uuid
 import json
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session as DbSession
@@ -35,9 +35,22 @@ RANDOM_PH_REGEX = re.compile(r'^\[X_([A-Z0-9]{4})\]$')
 
 def validate_placeholder(placeholder: str) -> bool:
     """校验代号格式是否合规"""
-    return bool(PH_REGEX.match(placeholder) or
-                SEMANTIC_PH_REGEX.match(placeholder) or
-                RANDOM_PH_REGEX.match(placeholder))
+    if not placeholder.startswith('[') or not placeholder.endswith(']'):
+        return False
+    inner = placeholder[1:-1]
+    # 结构化: [A-Z]{2,10}_\d{1,9} (序号不带前导零)
+    m = re.match(r'^([A-Z]{2,10})_(\d+)$', inner)
+    if m and len(m.group(2)) <= 9 and not m.group(2).startswith('0'):
+        return True
+    # 语义摘要: [A-Z]{2,10}_[A-Z]{1,6}_\d{1,9} (序号不带前导零)
+    m = re.match(r'^([A-Z]{2,10})_([A-Z]{1,6})_(\d+)$', inner)
+    if m and not m.group(3).startswith('0'):
+        return True
+    # 随机匿名: [X_[A-Z0-9]{4}]
+    m = re.match(r'^X_([A-Z0-9]{4})$', inner)
+    if m:
+        return True
+    return False
 
 
 def generate_structured_placeholder(category: str, sequence: int) -> str:
@@ -80,7 +93,7 @@ def infer_category(original: str) -> str:
         return "IPV4"
     # 人名（百家姓 + 2-4字姓名模式）
     from src.resources.surname_dict import SURNAMES
-    if 2 <= len(original) <= 4 and len(original) == len(original.encode('utf-8')):
+    if 2 <= len(original) <= 4 and len(original) != len(original.encode('utf-8')):
         first_char = original[0]
         if first_char in SURNAMES and re.match(r'^[\u4e00-\u9fff]+$', original):
             return "PERSON"
@@ -99,22 +112,17 @@ def infer_category(original: str) -> str:
     return "CUSTOM"
 
 
-def get_next_sequence(db: DbSession, category: str) -> int:
-    """获取指定分类的下一个序号"""
-    stmt = select(func.max(WordEntry.id)).where(WordEntry.category == category.upper())
-    result = db.execute(stmt).scalar()
-    if result is None:
-        return 1
-    # 最大ID+1（简化处理，实际用单独的sequence字段更优，此处保持结构不变）
-    stmt2 = select(func.count(WordEntry.id)).where(WordEntry.category == category.upper())
-    return db.execute(stmt2).scalar() + 1
-
-
 class WordLibraryService:
     """词库管理服务"""
 
     def __init__(self, db: DbSession):
         self.db = db
+
+    def get_next_sequence(self, category: str) -> int:
+        """获取指定分类的下一个序号（当前最大id+1）"""
+        stmt = select(func.count(WordEntry.id)).where(WordEntry.category == category.upper())
+        count = self.db.execute(stmt).scalar() or 0
+        return count + 1
 
     def add_entry(self, original: str, category: Optional[str] = None,
                   placeholder: Optional[str] = None, note: Optional[str] = None) -> WordEntry:
@@ -123,32 +131,34 @@ class WordLibraryService:
         category = category.upper()
 
         # 检查原始词冲突
-        existing = db.execute(select(WordEntry).where(WordEntry.original == original)).scalar_one_or_none()
+        existing = self.db.execute(select(WordEntry).where(WordEntry.original == original)).scalar_one_or_none()
         if existing:
             raise OriginalWordConflictError(f"原始词 '{original}' 已存在于词库，映射为 {existing.placeholder}")
 
         # 检查包含关系冲突
-        self._check_substring_conflict(original)
+        conflicts = self._check_substring_conflict(original)
+        # TODO: 向用户展示冲突警告
 
         # 生成或校验代号
         if placeholder:
             if not validate_placeholder(placeholder):
                 raise PlaceholderFormatError(f"代号 '{placeholder}' 格式不合规")
             # 检查代号冲突
-            existing_ph = db.execute(select(WordEntry).where(WordEntry.placeholder == placeholder)).scalar_one_or_none()
+            existing_ph = self.db.execute(select(WordEntry).where(WordEntry.placeholder == placeholder)).scalar_one_or_none()
             if existing_ph:
                 raise PlaceholderConflictError(f"代号 '{placeholder}' 已被 '{existing_ph.original}' 占用")
         else:
-            seq = get_next_sequence(self.db, category)
+            seq = self.get_next_sequence(category)
             placeholder = generate_structured_placeholder(category, seq)
 
+        now = datetime.now(timezone.utc)
         entry = WordEntry(
             original=original,
             category=category,
             placeholder=placeholder,
             note=note,
-            created_at=datetime.utcnow(),
-            last_used_at=datetime.utcnow(),
+            created_at=now,
+            last_used_at=now,
         )
         self.db.add(entry)
         self.db.commit()
@@ -156,7 +166,7 @@ class WordLibraryService:
 
     def _check_substring_conflict(self, original: str) -> list[str]:
         """检查包含关系冲突，返回冲突词条列表"""
-        all_entries = db.execute(select(WordEntry)).scalars().all()
+        all_entries = self.db.execute(select(WordEntry)).scalars().all()
         conflicts = []
         for e in all_entries:
             if original != e.original:
@@ -168,11 +178,11 @@ class WordLibraryService:
 
     def delete_entry(self, entry_id: int) -> None:
         """删除词条"""
-        entry = db.get(WordEntry, entry_id)
+        entry = self.db.get(WordEntry, entry_id)
         if not entry:
             raise WordEntryNotFoundError(f"词条ID {entry_id} 不存在")
-        db.delete(entry)
-        db.commit()
+        self.db.delete(entry)
+        self.db.commit()
 
     def search(self, keyword: Optional[str] = None,
                category: Optional[str] = None) -> list[WordEntry]:
@@ -185,12 +195,12 @@ class WordLibraryService:
                 (WordEntry.original.contains(keyword)) |
                 (WordEntry.note.contains(keyword))
             )
-        return list(db.execute(stmt).scalars().all())
+        return list(self.db.execute(stmt).scalars().all())
 
     def get_stats(self) -> dict:
         """词库统计"""
         stmt = select(WordEntry.category, func.count(WordEntry.id)).group_by(WordEntry.category)
-        result = db.execute(stmt).all()
+        result = self.db.execute(stmt).all()
         total = sum(r[1] for r in result)
         return {
             "total": total,

@@ -35,6 +35,9 @@ class TestPlaceholderFormat:
     def test_invalid_leading_zero(self):
         assert not validate_placeholder("[PERSON_01]")
 
+    def test_invalid_leading_zero_semantic(self):
+        assert not validate_placeholder("[PERSON_ZS_01]")
+
     def test_invalid_no_brackets(self):
         assert not validate_placeholder("PERSON_1")
 
@@ -56,7 +59,8 @@ class TestPlaceholderGeneration:
     def test_generate_random(self):
         ph = generate_random_placeholder()
         assert ph.startswith("[X_")
-        assert len(ph) == 7  # [X_ + 4 chars + ]
+        assert len(ph) == 8  # [X_ + 4 chars + ]
+        assert len(ph[3:-1]) == 4  # inner code is 4 chars
 
 
 class TestCategoryInference:
@@ -95,10 +99,10 @@ class TestWordLibraryService:
     """词库服务测试"""
 
     def test_add_entry(self, wordlib_service):
-        entry = wordlib_service.add_entry("测试人员", note="测试")
-        assert entry.original == "测试人员"
-        assert entry.placeholder == "[PERSON_1]"
+        entry = wordlib_service.add_entry("张三", note="重要客户")  # using a clear PERSON name
+        assert entry.original == "张三"
         assert entry.category == "PERSON"
+        assert entry.placeholder == "[PERSON_1]"
 
     def test_add_duplicate_original_raises(self, wordlib_service):
         wordlib_service.add_entry("重复测试")

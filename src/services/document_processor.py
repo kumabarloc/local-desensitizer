@@ -7,7 +7,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
 
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session as DbSession
+
 from src.models.models import WordEntry, Snapshot, Session as SessionRecord
 
 
@@ -63,14 +65,8 @@ class DocumentDesensitizer:
                 warnings.append(f"检测到原文含有代号格式字符串 '{ph}'")
 
         # 2. 词库匹配（从长到短排序）
-        all_entries = self.db.execute(
-            # 按original长度降序排列
-        ).scalars().all()
-
-        # 用SQL排序
-        from sqlalchemy import select
         entries = self.db.execute(
-            select(WordEntry).order_by(WordEntry.original.length().desc())
+            select(WordEntry).order_by(func.length(WordEntry.original).desc())
         ).scalars().all()
 
         for entry in entries:
@@ -99,27 +95,30 @@ class DocumentDesensitizer:
                 already_matched = any(item.original == matched_text for item in items.values())
                 if not already_matched:
                     # 自动规则只收集信息，不写入词库
-                    items[f"autodetect:{rule_name}"] = ReplacementItem(
-                        original=matched_text,
-                        placeholder=f"[{rule_name}_AUTO]",
-                        category=rule_name,
-                        source=f"autodetect:{rule_name}",
-                        positions=[(match.start(), match.end())]
-                    )
+                    key = f"autodetect:{rule_name}"
+                    if key not in items:  # avoid duplicates from same rule
+                        items[key] = ReplacementItem(
+                            original=matched_text,
+                            placeholder=f"[{rule_name}_AUTO]",
+                            category=rule_name,
+                            source=f"autodetect:{rule_name}",
+                            positions=[(match.start(), match.end())]
+                        )
 
         return list(items.values()), warnings
 
     def desensitize(self, text: str, confirmed_items: list[ReplacementItem]) -> str:
-        """执行脱敏替换"""
-        result = text
-        # 从后往前替换，避免位置偏移问题
+        """执行脱敏替换（从后往前替换，避免位置偏移）"""
+        # 收集所有位置
         all_positions: list[tuple[int, int, str]] = []
         for item in confirmed_items:
             for start, end in item.positions:
                 all_positions.append((start, end, item.placeholder))
 
-        # 按位置从后往前排序
-        all_positions.sort(key=lambda x: (x[0], -x[1]))
+        # 按起始位置从后往前排序（这样从后往前替换不会影响前面位置）
+        all_positions.sort(key=lambda x: x[0], reverse=True)
+
+        result = text
         for start, end, placeholder in all_positions:
             result = result[:start] + placeholder + result[end:]
         return result
@@ -127,3 +126,18 @@ class DocumentDesensitizer:
     def check_collision(self, original1: str, original2: str) -> bool:
         """检查两个原始词是否存在包含关系冲突"""
         return original1 in original2 or original2 in original1
+
+    def auto_detect(self, text: str) -> list[ReplacementItem]:
+        """仅用自动规则扫描，不依赖词库"""
+        items = []
+        for rule_name, (pattern, label) in self.AUTO_PATTERNS.items():
+            for match in pattern.finditer(text):
+                matched_text = match.group()
+                items.append(ReplacementItem(
+                    original=matched_text,
+                    placeholder=f"[{rule_name}_AUTO]",
+                    category=rule_name,
+                    source=f"autodetect:{rule_name}",
+                    positions=[(match.start(), match.end())]
+                ))
+        return items

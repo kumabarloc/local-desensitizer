@@ -1,0 +1,26 @@
+[project]
+name = "本地数据脱敏与还原工具"
+version = "0.1.0"
+description = "本地化数据脱敏与还原工具，支持文档脱敏、还原、词库管理"
+requires-python = ">=3.11"
+dependencies = [
+    "PyQt6>=6.6.0",
+    "SQLAlchemy>=2.0",
+    "python-docx>=1.1.0",
+    "openpyxl>=3.1.0",
+    "python-pptx>=0.6.23",
+    "pandas>=2.1.0",
+    "argon2-cffi>=23.1.0",
+    "qrcode>=7.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-qt>=4.2.0",
+    "coverage>=7.3.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

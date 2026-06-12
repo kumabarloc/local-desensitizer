@@ -1,4 +1,4 @@
-# 🔒 DataVault · 本地数据脱敏与还原工具
+# 🔒 墨盾 (Moshield) · 本地数据脱敏与还原工具
 
 > **本地化 · 离线运行 · LLM 友好 · 文档结构完整保留**
 
@@ -17,7 +17,7 @@
 | 🤖 **LLM 友好输出** | 脱敏后 .md 文件**自动嵌入元数据头部** + 5 条 LLM 行为约束 |
 | ⚠️ **冲突检测** | 漏脱 / 占位符不一致 / 定义冲突——头部醒目列出 |
 | 🔁 **完整还原** | 基于快照，可逆（即使过 1 年也能还原原文）|
-| 🔒 **本地存储** | 数据存 `%APPDATA%\DataVault\`，不上云 |
+| 🔒 **本地存储** | 数据存 `%APPDATA%\墨盾\`，不上云 |
 | 🖥️ **PyQt6 GUI** | 5 个 Tab：词库管理 / 文档脱敏 / 文档还原 / 会话历史 / 设置 |
 
 ---
@@ -55,9 +55,9 @@ pytest tests/ -v
 
 ### 方式 2：用打包好的 exe（普通用户）
 
-1. 从 [Releases](https://github.com/kumabarloc/local-desensitizer/releases) 下载 `DataVault.exe`
+1. 从 [Releases](https://github.com/kumabarloc/local-desensitizer/releases) 下载 `Moshield.exe`
 2. 双击运行
-3. 首次启动会在 `%APPDATA%\DataVault\` 创建数据目录
+3. 首次启动会在 `%APPDATA%\墨盾\` 创建数据目录
 
 ### 方式 3：自己打包
 
@@ -65,7 +65,7 @@ pytest tests/ -v
 # Windows PowerShell
 .\venv\Scripts\Activate.ps1
 .\build.ps1
-# 产物: dist\DataVault.exe （约 60-90 MB）
+# 产物: dist\Moshield.exe （约 60-90 MB）
 ```
 
 ---
@@ -79,7 +79,7 @@ pytest tests/ -v
    ├─ 表格: 参会人员名单
    └─ 正文: 4 位领导发言
 
-↓ 打开 DataVault → 选文件 → 词库匹配自动识别 4 位领导
+↓ 打开 墨盾 → 选文件 → 词库匹配自动识别 4 位领导
 ↓ 输出格式选: Markdown (.md) - 推荐 LLM 使用
 ↓ 点 🚀 执行脱敏
 
@@ -195,13 +195,13 @@ pytest tests/ --cov=src
 
 - 简单正则可能误识别（如 "2026" 被当作金额 "2026 元" 误命中），可在 GUI 设置里调阈值
 - L0 规则不识别中文人名/单位（计划用 JioNLP 解决）
-- 自动备份路径硬编码 `%APPDATA%\DataVault\data\backups\`
+- 自动备份路径硬编码 `%APPDATA%\墨盾\data\backups\`
 
 ---
 
 ## 🔐 安全
 
-- 所有数据**仅存在本地**（`%APPDATA%\DataVault\data\`）
+- 所有数据**仅存在本地**（`%APPDATA%\墨盾\data\`）
 - **不上传任何文档**到云端
 - 可选访问密码保护（argon2 哈希）
 - 词库、配置、快照都在本地 SQLite 里

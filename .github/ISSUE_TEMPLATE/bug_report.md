@@ -1,6 +1,6 @@
 ---
 name: 🐛 Bug 报告
-about: 报告 DataVault 的 Bug
+about: 报告 墨盾 的 Bug
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -12,7 +12,7 @@ assignees: ''
 
 ## 📋 复现步骤
 
-1. 打开 DataVault
+1. 打开 墨盾
 2. 选文件 '...'
 3. 点击 '...'
 4. 看到 '...'
@@ -29,7 +29,7 @@ assignees: ''
 
 - **操作系统**: [例如 Windows 11 / macOS 14 / Ubuntu 22.04]
 - **Python 版本**: [例如 3.11.5]
-- **DataVault 版本**: [例如 0.2.0，或 commit hash]
+- **墨盾 版本**: [例如 0.2.0，或 commit hash]
 - **安装方式**: [例如 exe 打包版 / 源码 pip install]
 
 ## 📝 附加信息

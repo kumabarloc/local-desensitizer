@@ -12,14 +12,14 @@ def get_app_data_dir() -> Path:
     """获取应用数据目录（持久化用户数据的位置）
 
     - 开发模式: 项目根目录的 data/
-    - 打包后 (PyInstaller): %APPDATA%/DataVault/ (用户配置目录)
+    - 打包后 (PyInstaller): %APPDATA%/墨盾/ (用户配置目录)
       这样 exe 可以放在 Program Files 等只读位置而不会丢数据
     """
     if getattr(sys, 'frozen', False):
         # PyInstaller 打包后：用 Windows %APPDATA% 存数据
         appdata = os.environ.get('APPDATA')
         if appdata:
-            data_dir = Path(appdata) / "DataVault"
+            data_dir = Path(appdata) / "墨盾"
             data_dir.mkdir(parents=True, exist_ok=True)
             return data_dir
         # fallback: exe 所在目录

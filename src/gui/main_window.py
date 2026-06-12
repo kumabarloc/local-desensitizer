@@ -26,7 +26,8 @@ class MainWindow(QMainWindow):
         self._refresh_word_table()
 
     def _setup_ui(self):
-        self.setWindowTitle("本地数据脱敏与还原工具")
+        from src import __app_name__, __version__
+        self.setWindowTitle(f"{__app_name__} v{__version__}")
         self.setMinimumSize(900, 650)
 
         central = QWidget()
@@ -601,9 +602,27 @@ class MainWindow(QMainWindow):
                 )
                 if len(conflicts) > 5:
                     completion_msg += f"\n  • ... 还有 {len(conflicts) - 5} 处"
-                QMessageBox.warning(self, "脱敏完成（含冲突）", completion_msg)
+                box = QMessageBox(self)
+                box.setIcon(QMessageBox.Icon.Warning)
+                box.setWindowTitle("脱敏完成（含冲突）")
+                box.setText(completion_msg)
+                box.setStandardButtons(
+                    QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Open
+                )
+                box.button(QMessageBox.StandardButton.Open).setText("📁 打开输出文件夹")
+                if box.exec() == QMessageBox.StandardButton.Open:
+                    self._open_in_file_explorer(output_path)
             else:
-                QMessageBox.information(self, "脱敏完成", completion_msg)
+                box = QMessageBox(self)
+                box.setIcon(QMessageBox.Icon.Information)
+                box.setWindowTitle("脱敏完成")
+                box.setText(completion_msg)
+                box.setStandardButtons(
+                    QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Open
+                )
+                box.button(QMessageBox.StandardButton.Open).setText("📁 打开输出文件夹")
+                if box.exec() == QMessageBox.StandardButton.Open:
+                    self._open_in_file_explorer(output_path)
             self.statusBar().showMessage(f"脱敏完成: {output_path}", 5000)
         except Exception as ex:
             QMessageBox.warning(self, "脱敏失败", str(ex))
@@ -685,11 +704,38 @@ class MainWindow(QMainWindow):
                 "\n".join([f"{m['placeholder']} → {m.get('original','(加密)')}" for m in mappings[:10]]))
 
     def on_about(self):
-        QMessageBox.about(self, "关于",
-            "本地数据脱敏与还原工具 v0.1\n\n"
-            "🛡️ 安全 · 📍 本地 · 🔄 可逆\n\n"
-            "所有数据仅存储在本地，不上传任何外部服务。\n"
-            "Powered by Python + PyQt6")
+        from src import __app_name__, __version__, __app_name_en__, __description__
+        QMessageBox.about(self, f"关于 {__app_name__}",
+            f"<h2 style='margin-bottom: 0'>{__app_name__} <span style='color: #888'>{__version__}</span></h2>"
+            f"<p style='color: #666; margin-top: 4px'>{__app_name_en__}</p>"
+            f"<p>{__description__}</p>"
+            f"<hr>"
+            f"<p>🛡️ <b>安全</b> · 📍 <b>本地</b> · 🔄 <b>可逆</b></p>"
+            f"<p>所有数据仅存储在本地，不上传任何外部服务。</p>"
+            f"<p>Powered by Python + PyQt6</p>"
+            f"<p><a href='https://github.com/kumabarloc/local-desensitizer'>GitHub 仓库</a></p>")
+
+    def _open_in_file_explorer(self, path: Path):
+        """在系统文件管理器中打开文件（Windows 资源管理器/macOS Finder/Linux 文件管理器）"""
+        import subprocess
+        import os
+        import sys
+        path = Path(path)
+        if not path.exists():
+            QMessageBox.warning(self, "文件不存在", f"找不到文件:\n{path}")
+            return
+        try:
+            if sys.platform == "win32":
+                # Windows: explorer /select 定位到文件
+                subprocess.Popen(['explorer', '/select,', str(path)])
+            elif sys.platform == "darwin":
+                # macOS: open -R 在 Finder 中显示
+                subprocess.Popen(['open', '-R', str(path)])
+            else:
+                # Linux: 打开父目录
+                subprocess.Popen(['xdg-open', str(path.parent)])
+        except Exception as ex:
+            QMessageBox.warning(self, "打开失败", f"无法打开文件管理器:\n{ex}")
 
 
 # ============================================================

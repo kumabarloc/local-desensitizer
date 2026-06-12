@@ -1,6 +1,6 @@
 ---
 name: 💡 功能建议
-about: 为 DataVault 提出新功能建议
+about: 为 墨盾 提出新功能建议
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

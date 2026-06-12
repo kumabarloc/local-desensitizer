@@ -1,16 +1,16 @@
-# DataVault 打包脚本
+# 墨盾 (Moshield) 打包脚本
 # 用法：在 PowerShell 里执行 .\build.ps1
 #
 # 前置条件：
 #   1. 已经在 venv 里 (.\venv\Scripts\Activate.ps1)
 #   2. pip install -e ".[dev]" 已执行（依赖装好）
 #
-# 输出：dist\DataVault.exe （单文件，约 60-90 MB）
+# 输出：dist\Moshield.exe （单文件，约 60-90 MB）
 
 $ErrorActionPreference = 'Stop'
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "DataVault 打包脚本" -ForegroundColor Cyan
+Write-Host "墨盾 (Moshield) 打包脚本" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -24,7 +24,7 @@ Write-Host ""
 Write-Host "[2/5] 清理旧 build / dist ..." -ForegroundColor Yellow
 if (Test-Path 'build') { Remove-Item -Recurse -Force 'build' }
 if (Test-Path 'dist') { Remove-Item -Recurse -Force 'dist' }
-if (Test-Path 'DataVault.spec') { Remove-Item -Force 'DataVault.spec' }
+if (Test-Path 'Moshield.spec') { Remove-Item -Force 'Moshield.spec' }
 Write-Host "  ✓ 清理完成" -ForegroundColor Green
 Write-Host ""
 
@@ -50,7 +50,7 @@ Write-Host ""
 
 # 5. 验证
 Write-Host "[5/5] 验证产物 ..." -ForegroundColor Yellow
-$exePath = "dist\DataVault.exe"
+$exePath = "dist\Moshield.exe"
 if (Test-Path $exePath) {
     $size = (Get-Item $exePath).Length / 1MB
     Write-Host "  ✓ 产物存在: $exePath" -ForegroundColor Green
@@ -65,11 +65,11 @@ Write-Host "打包完成！" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "运行方法："
-Write-Host "  1. 双击 dist\DataVault.exe" -ForegroundColor White
-Write-Host "  2. 或在终端: .\dist\DataVault.exe" -ForegroundColor White
+Write-Host "  1. 双击 dist\Moshield.exe" -ForegroundColor White
+Write-Host "  2. 或在终端: .\dist\Moshield.exe" -ForegroundColor White
 Write-Host ""
 Write-Host "用户数据位置（首次运行自动创建）："
-Write-Host "  $env:APPDATA\DataVault\data\vault.db" -ForegroundColor White
+Write-Host "  $env:APPDATA\墨盾\data\vault.db" -ForegroundColor White
 Write-Host ""
 Write-Host "分发方式："
 Write-Host "  - 单 exe 直接拷给用户即可（约 70 MB）" -ForegroundColor White

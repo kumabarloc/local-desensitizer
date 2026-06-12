@@ -1,11 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置
+"""墨盾 (Moshield) PyInstaller 打包配置
 
 打包命令（在 PowerShell venv 里）:
     pip install pyinstaller
     pyinstaller build.spec --clean
 
-输出: dist/DataVault.exe （单文件，约 60-90 MB）
+输出: dist/Moshield.exe （单文件，约 60-90 MB）
 """
 import sys
 from pathlib import Path
@@ -16,6 +16,7 @@ PATHEX = [str(Path('.').resolve())]
 # 数据文件：项目自带的资源字典（运行时 import 用）
 DATAS = [
     ('src/resources/*.py', 'src/resources'),
+    ('assets/icon.ico', 'assets'),
 ]
 
 # 排除不需要的库（减小体积）
@@ -70,7 +71,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='DataVault',
+    name='Moshield',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -83,5 +84,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon='assets/icon.ico',  # 暂不指定图标（要 .ico 文件）
+    icon='assets/icon.ico',  # 墨盾应用图标（7 个分辨率：16-256）
 )

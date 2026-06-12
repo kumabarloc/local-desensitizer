@@ -1,7 +1,7 @@
 [project]
-name = "local-desensitizer"
-version = "0.1.0"
-description = "本地化数据脱敏与还原工具，支持文档脱敏、还原、词库管理"
+name = "moshield"
+version = "0.3.0"
+description = "墨盾 - 本地化数据脱敏与还原工具，保留文档结构，LLM 友好的 Markdown 输出"
 requires-python = ">=3.11"
 dependencies = [
     "PyQt6>=6.6.0",

@@ -1,4 +1,4 @@
-"""GUI 应用入口"""
+"""墨盾 GUI 应用入口"""
 import sys
 from pathlib import Path
 
@@ -6,7 +6,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QIcon
 
+from src import __version__, __app_name__, __app_name_en__
 from src.gui.main_window import MainWindow
 from src.services.database import get_engine, init_db, get_session
 from src.services.word_library import WordLibraryService
@@ -15,6 +17,15 @@ from src.services.snapshot_service import SnapshotService, SessionService
 from src.services.restore_service import RestoreService
 from src.services.settings_service import SettingsService
 from src.services.batch_import import BatchImportService
+
+
+def get_app_icon_path() -> Path:
+    """获取应用图标路径（兼容开发与打包两种模式）"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后
+        return Path(sys._MEIPASS) / "assets" / "icon.ico"
+    # 开发模式
+    return Path(__file__).parent.parent / "assets" / "icon.ico"
 
 
 class AppService:
@@ -46,7 +57,16 @@ class AppService:
 
 def main():
     app = QApplication(sys.argv)
+    app.setApplicationName(__app_name__)
+    app.setApplicationVersion(__version__)
+    app.setApplicationDisplayName(f"{__app_name__} v{__version__}")
+    app.setOrganizationName(__app_name_en__)
     app.setStyle("Fusion")  # 跨平台统一风格
+
+    # 设置应用图标
+    icon_path = get_app_icon_path()
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # 初始化应用服务
     service = AppService()

@@ -12,6 +12,27 @@
 - 行业词典（多场景适配）
 - 批量处理（一次扫整个文件夹）
 
+## [0.3.0] - 2026-06-12
+
+### 重大变更
+- 🎉 **中文名"墨盾"** (Moshield) 上线
+  - 原 DataVault 名称退役，所有产品展示、代码、文档统一为"墨盾"
+  - Python 包名：`local-desensitizer` → `moshield`
+  - 可执行文件名：`DataVault.exe` → `Moshield.exe`
+  - 窗口标题 + About 对话框 + 应用 ID 全部更新
+- 🎉 **应用图标**：盾形 + 墨水流动 + 朱红印章（多分辨率 .ico，16-256 px）
+  - 自动在任务栏 / 标题栏 / 资源管理器显示
+
+### 新增
+- ✨ **"打开输出文件夹"按钮**：脱敏/还原完成后弹窗多一个按钮，一键直达文件位置（Windows 资源管理器 / macOS Finder / Linux 文件管理器）
+- ✨ **About 对话框美化**：HTML 格式，含版本号、应用名、GitHub 链接
+- ✨ **应用 ID / 版本元数据**：`src/__init__.py` 定义 `__version__` / `__app_name__` / `__app_name_en__`
+
+### 修复
+- 🐛 `database.py` 残留 `DataVault` 字样（路径目录名同步更新）
+- 🐛 `build.ps1` 残留 `DataVault` 字样
+- 🐛 `BUILD.md` / `README.md` / GitHub Issue 模板 残留 `DataVault` 字样
+
 ## [0.2.0] - 2026-06-12
 
 ### 新增
@@ -41,6 +62,7 @@
 ### 测试
 - 80 个单元测试 + 集成测试
 
-[Unreleased]: https://github.com/kumabarloc/local-desensitizer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kumabarloc/local-desensitizer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kumabarloc/local-desensitizer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kumabarloc/local-desensitizer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kumabarloc/local-desensitizer/releases/tag/v0.1.0

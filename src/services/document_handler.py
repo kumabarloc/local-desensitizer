@@ -80,43 +80,108 @@ class CsvHandler(DocumentHandler):
 
 
 class DocxHandler(DocumentHandler):
-    """Word文档处理器 .docx"""
+    """Word文档处理器 .docx
+
+    读写都走 Markdown 中间格式，以保留表格/标题/列表结构。
+    - read(): 用 python-docx 按 body 顺序遍历，输出 MD 语法
+            （不走 mammoth，因为 mammoth 转 MD 会丢表格）
+    - write(): MD → docx (markdown_to_docx)
+    """
 
     def read(self, path: Path) -> str:
         from docx import Document
+        from docx.oxml.ns import qn
+
         doc = Document(path)
-        paragraphs = []
-        # 主文本
-        for para in doc.paragraphs:
-            if para.text.strip():
-                paragraphs.append(para.text)
-        # 表格
-        for table in doc.tables:
-            for row in table.rows:
-                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                if cells:
-                    paragraphs.append(' | '.join(cells))
+        # 建立 XML 元素到 python-docx 对象的映射（O(n) 查找）
+        para_map = {p._p: p for p in doc.paragraphs}
+        table_map = {t._tbl: t for t in doc.tables}
+
+        parts: list[str] = []
+        body = doc.element.body
+        for child in body.iterchildren():
+            if child.tag == qn('w:p'):
+                if child in para_map:
+                    p = para_map[child]
+                    md_line = self._paragraph_to_md(p)
+                    parts.append(md_line)
+            elif child.tag == qn('w:tbl'):
+                if child in table_map:
+                    t = table_map[child]
+                    md_table = self._table_to_md(t)
+                    parts.append(md_table)
+
         # 页眉页脚
+        extra: list[str] = []
         for section in doc.sections:
             header = section.header
             if header:
                 for para in header.paragraphs:
                     if para.text.strip():
-                        paragraphs.append(f"[Header] {para.text.strip()}")
+                        extra.append(f"[Header] {para.text.strip()}")
             footer = section.footer
             if footer:
                 for para in footer.paragraphs:
                     if para.text.strip():
-                        paragraphs.append(f"[Footer] {para.text.strip()}")
-        return '\n'.join(paragraphs)
+                        extra.append(f"[Footer] {para.text.strip()}")
+        if extra:
+            parts.append('\n'.join(extra))
+
+        return '\n\n'.join(parts)
+
+    @staticmethod
+    def _paragraph_to_md(p) -> str:
+        """段落 → MD 语法"""
+        text = p.text
+        if not text.strip():
+            return ''  # 空行
+
+        style = p.style.name if p.style else 'Normal'
+
+        # 标题
+        if 'Heading' in style or style == 'Title':
+            level = 1
+            for k in ('Heading 1', 'Title'):
+                if style == k:
+                    return f'# {text}'
+            for lvl in range(1, 7):
+                if style == f'Heading {lvl}':
+                    return f'{'#' * lvl} {text}'
+            return f'## {text}'  # fallback
+
+        # 列表
+        if 'List' in style and 'Bullet' in style.replace('List ', ''):
+            return f'- {text}'
+        if 'List' in style and ('Number' in style or 'Paragraph' in style):
+            return f'1. {text}'  # 简化为有序起点，docx 不强制数字连续
+
+        # 普通段落
+        return text
+
+    @staticmethod
+    def _table_to_md(t) -> str:
+        """表格 → MD 语法"""
+        rows = []
+        for row in t.rows:
+            cells = []
+            for cell in row.cells:
+                # 单元格可能含多行，用空格拼接避免破坏 MD 表格
+                cell_text = cell.text.strip().replace('\n', ' ')
+                cells.append(cell_text)
+            rows.append('| ' + ' | '.join(cells) + ' |')
+
+        # 插入表头分隔行
+        if rows:
+            n_cols = rows[0].count('|') - 1
+            if n_cols > 0:
+                separator = '| ' + ' | '.join(['---'] * n_cols) + ' |'
+                rows.insert(1, separator)
+
+        return '\n'.join(rows)
 
     def write(self, path: Path, content: str) -> None:
-        from docx import Document
-        from docx.shared import Pt
-        doc = Document()
-        for line in content.split('\n'):
-            p = doc.add_paragraph(line)
-        doc.save(path)
+        from src.services.md_converter import markdown_to_docx
+        markdown_to_docx(content, path)
 
     def get_extension(self) -> str:
         return ".docx"

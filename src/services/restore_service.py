@@ -16,22 +16,29 @@ from src.services.document_handler import get_handler
 PH_REGEX = re.compile(r'\[([A-Z]{2,10})_(\d+)\]')
 SEMANTIC_PH_REGEX = re.compile(r'\[([A-Z]{2,10})_([A-Z]{1,6})_(\d+)\]')
 RANDOM_PH_REGEX = re.compile(r'\[X_([A-Z0-9]{4})\]')
+AUTO_PH_REGEX = re.compile(r'\[([A-Z]{2,10})_AUTO\]')  # L0 规则生成：无法还原，原样保留
 
 
 def extract_placeholders(text: str) -> list[str]:
     """从文本中提取所有代号"""
     placeholders = set()
-    for regex in [PH_REGEX, SEMANTIC_PH_REGEX, RANDOM_PH_REGEX]:
+    for regex in [PH_REGEX, SEMANTIC_PH_REGEX, RANDOM_PH_REGEX, AUTO_PH_REGEX]:
         for match in regex.finditer(text):
             placeholders.add(match.group())
     return list(placeholders)
+
+
+def is_auto_placeholder(ph: str) -> bool:
+    """判断是否是 L0 自动规则生成的占位符（无法还原）"""
+    return bool(AUTO_PH_REGEX.fullmatch(ph))
 
 
 @dataclass
 class RestoreResult:
     """还原结果"""
     restored_text: str
-    unreplaced: list[str]  # 有代号但找不到映射的
+    unreplaced: list[str]  # 有代号但找不到映射的（排除 AUTO 规则）
+    auto_unreplaced: list[str]  # L0 自动规则生成的代号（无法还原）
     nested_warnings: list[str]  # 还原后再次出现代号的
     stats: dict
 
@@ -65,8 +72,14 @@ class RestoreService:
         mappings: dict[str, str],
         warn_on_unmatched: bool = True
     ) -> RestoreResult:
-        """还原文本"""
+        """还原文本
+
+        处理逻辑：
+        - 标准代号 (e.g. [LEADER_1])：有映射就还原，没映射报"无法匹配"
+        - AUTO 代号 (e.g. [PHONE_AUTO])：L0 规则生成，无原始值可还原，**原样保留**
+        """
         unreplaced = []
+        auto_unreplaced = []
         nested_warnings = []
         result = text
 
@@ -75,6 +88,11 @@ class RestoreService:
         replacement_map: dict[int, tuple[int, int, str]] = {}
 
         for ph in all_placeholders:
+            # AUTO 占位符：无原始值可还原，原样保留
+            if is_auto_placeholder(ph):
+                auto_unreplaced.append(ph)
+                continue
+
             if ph not in mappings:
                 unreplaced.append(ph)
                 continue
@@ -101,11 +119,13 @@ class RestoreService:
         return RestoreResult(
             restored_text=result,
             unreplaced=unreplaced,
+            auto_unreplaced=auto_unreplaced,
             nested_warnings=nested_warnings,
             stats={
                 "total_placeholders": len(all_placeholders),
-                "replaced": len(all_placeholders) - len(unreplaced),
+                "replaced": len(all_placeholders) - len(unreplaced) - len(auto_unreplaced),
                 "unreplaced_count": len(unreplaced),
+                "auto_unreplaced_count": len(auto_unreplaced),
             }
         )
 

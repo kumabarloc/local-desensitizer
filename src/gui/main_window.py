@@ -647,8 +647,19 @@ class MainWindow(QMainWindow):
                 mappings = self.app.restore_svc.load_mappings_from_snapshot(snapshot_id)
             result = self.app.restore_svc.restore_text(content, mappings)
             self.restore_preview.setText(result.restored_text)
+            # 构造警告信息
+            warnings = []
             if result.unreplaced:
-                self.restore_warning.setText(f"⚠️ {len(result.unreplaced)} 个代号无法匹配: {', '.join(result.unreplaced[:3])}")
+                warnings.append(f"⚠️ {len(result.unreplaced)} 个代号无法匹配: {', '.join(result.unreplaced[:3])}")
+            if result.auto_unreplaced:
+                warnings.append(
+                    f"ℹ️ {len(result.auto_unreplaced)} 个自动规则代号保留原样（不可还原）: "
+                    f"{', '.join(result.auto_unreplaced[:3])}"
+                )
+            if warnings:
+                self.restore_warning.setText('\n'.join(warnings))
+            else:
+                self.restore_warning.setText("✅ 全部代号还原成功")
             self.btn_execute_restore.setEnabled(True)
         except Exception as ex:
             QMessageBox.warning(self, "预览失败", str(ex))

@@ -139,8 +139,14 @@ class TestBackup:
         remaining = list(BACKUP_DIR.glob("vault_*.db"))
         assert len(remaining) == 5
 
-    def test_backup_database_nonexistent_db(self, settings):
-        """数据库不存在时返回 None"""
-        settings.update(db_path="/nonexistent/path/db.db")
+    def test_backup_database_nonexistent_db(self, settings, tmp_path, monkeypatch):
+        """数据库不存在时返回 None（指向不存在的 APP_DATA_DIR）"""
+        from src.services import database as db_mod
+        # 指向不存在的目录
+        nonexistent = tmp_path / "nonexistent_appdata"
+        monkeypatch.setattr(db_mod, "APP_DATA_DIR", nonexistent)
+        # 重新设置 BACKUP_DIR
+        from src.services import settings_service
+        monkeypatch.setattr(settings_service, "BACKUP_DIR", nonexistent / "data" / "backups")
         result = settings.backup_database()
         assert result is None

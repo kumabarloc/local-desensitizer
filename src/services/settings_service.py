@@ -130,7 +130,10 @@ class SettingsService:
     def backup_database(self) -> Optional[Path]:
         """手动备份数据库（复制到 backup 目录）"""
         config = self.load()
-        db_path = Path(config.db_path)
+        # 使用实际数据库路径（APP_DATA_DIR 下的 vault.db），
+        # 而不是 config.db_path（默认是 "./data/vault.db"，打包后不对）
+        from src.services.database import APP_DATA_DIR
+        db_path = APP_DATA_DIR / "data" / "vault.db"
         if not db_path.exists():
             return None
 

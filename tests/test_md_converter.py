@@ -91,7 +91,7 @@ class TestMarkdownToDocx:
 
 | 姓名 | 部门 | 金额 |
 | --- | --- | --- |
-| 张三 | 监测室 | 500万 |
+| 张三 | 研发部 | 500万 |
 | 李四 | 数据中心 | 1000万 |
 
 ## 结论
@@ -182,7 +182,7 @@ class TestDocxRoundTrip:
         table.style = 'Table Grid'
         cells_data = [
             ["姓名", "部门", "金额"],
-            ["张三", "监测室", "500万"],
+            ["张三", "研发部", "500万"],
             ["李四", "数据中心", "1000万"],
         ]
         for r, row in enumerate(cells_data):

@@ -36,7 +36,7 @@ class TestDescribeOriginal:
 
     def test_long_string(self):
         # 5+ 字符：保留首尾，中间 ***
-        assert _describe_original("北京市生态环境局") == "北***局"
+        assert _describe_original("某市某局子部门") == "某***门"
         assert _describe_original("ZhangSan123") == "Z***3"
 
 

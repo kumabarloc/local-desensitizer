@@ -184,7 +184,7 @@ pytest tests/ --cov=src
 | ✅ | 脱敏文档头部 + 冲突检测 |
 | ✅ | PyInstaller 打包 |
 | ⏳ | JioNLP 集成（自动识别人名/单位/地名，词库自动采种）|
-| ⏳ | 行业词典（生态环境/医疗/金融等）|
+| ⏳ | 行业词典（多场景适配）|
 | ⏳ | 批量处理（一次扫整个文件夹）|
 | 💡 | macOS / Linux 打包 |
 | 💡 | 多语言 UI（English / 中文切换）|
@@ -218,7 +218,6 @@ pytest tests/ --cov=src
 
 ## 🙏 致谢
 
-- 灵感来自日常工作（生态环境监测）的文档脱敏需求
 - 借力于 LLM 时代对**安全数据流通**的强烈需求
 - 用了 LLM 帮我写代码和重构（dogfooding）
 
@@ -227,6 +226,3 @@ pytest tests/ --cov=src
 ## 📮 联系
 
 - GitHub Issues: <https://github.com/kumabarloc/local-desensitizer/issues>
-- 作者: 大山
-
-> Made with 🦛 by 河马

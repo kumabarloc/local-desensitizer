@@ -175,7 +175,9 @@ class MainWindow(QMainWindow):
         self._refresh_word_table()
 
     def on_word_selection_changed(self):
-        has_selection = len(self.word_table.selectedRows()) > 0
+        # PyQt6 兼容写法：QTableWidget 没有 selectedRows()，
+        # 要用 selectionModel().selectedRows()
+        has_selection = bool(self.word_table.selectionModel().selectedRows())
         self.btn_delete_word.setEnabled(has_selection)
         self.btn_edit_word.setEnabled(has_selection)
 
@@ -297,6 +299,19 @@ class MainWindow(QMainWindow):
         file_layout.addWidget(self.btn_preview)
         file_layout.addWidget(self.btn_execute_desensitize)
         layout.addLayout(file_layout)
+
+        # 输出格式选择
+        output_layout = QHBoxLayout()
+        output_layout.addWidget(QLabel("输出格式:"))
+        self.output_format_combo = QComboBox()
+        self.output_format_combo.addItems([
+            "Markdown (.md) - 推荐 LLM 使用",
+            "Word (.docx) - 重建表格/格式",
+            "保持原格式",
+        ])
+        self.output_format_combo.setCurrentIndex(0)  # 默认 MD
+        output_layout.addWidget(self.output_format_combo, stretch=1)
+        layout.addLayout(output_layout)
 
         # 脱敏预览
         preview_group = QGroupBox("脱敏预览")
@@ -548,14 +563,48 @@ class MainWindow(QMainWindow):
         filepath = Path(self.desensitize_file_label.text())
         try:
             from src.services.document_handler import read_document
+            from src.services.header_generator import generate_header, detect_conflicts
             content, handler = read_document(filepath)
             items, warnings = self.app.desensitizer.scan_text(content)
             confirmed = items  # 全量确认
             result = self.app.desensitizer.desensitize(content, confirmed)
-            output_path = filepath.parent / f"{filepath.stem}_desensitized{filepath.suffix}"
-            handler.write(output_path, result)
+
+            # 检测冲突
+            conflicts = detect_conflicts(content, result, items)
+
+            # 生成脱敏文档首部（元数据 + 提示词）
+            header = generate_header(filepath, items, conflicts)
+            full_output = header + result
+
+            # 根据用户选择的输出格式决定输出路径和写入方式
+            fmt_index = self.output_format_combo.currentIndex()
+            if fmt_index == 0:  # Markdown
+                output_path = filepath.parent / f"{filepath.stem}_desensitized.md"
+                # 头部已经在 full_output 里，直接写为 MD
+                output_path.write_text(full_output, encoding='utf-8')
+            elif fmt_index == 1:  # Word
+                output_path = filepath.parent / f"{filepath.stem}_desensitized.docx"
+                # MD → docx 重建（以保留表格/标题）
+                from src.services.md_converter import markdown_to_docx
+                markdown_to_docx(full_output, output_path)
+            else:  # 保持原格式
+                output_path = filepath.parent / f"{filepath.stem}_desensitized{filepath.suffix}"
+                handler.write(output_path, full_output)
+
+            # 构造完成消息：如有冲突，醒目标出
+            completion_msg = f"已保存到:\n{output_path}"
+            if conflicts:
+                completion_msg = (
+                    f"⚠️ 脱敏完成但发现 {len(conflicts)} 处冲突！\n\n"
+                    f"已保存到:\n{output_path}\n\n"
+                    f"冲突详情:\n" + "\n".join(f"  • {c}" for c in conflicts[:5])
+                )
+                if len(conflicts) > 5:
+                    completion_msg += f"\n  • ... 还有 {len(conflicts) - 5} 处"
+                QMessageBox.warning(self, "脱敏完成（含冲突）", completion_msg)
+            else:
+                QMessageBox.information(self, "脱敏完成", completion_msg)
             self.statusBar().showMessage(f"脱敏完成: {output_path}", 5000)
-            QMessageBox.information(self, "脱敏完成", f"已保存到:\n{output_path}")
         except Exception as ex:
             QMessageBox.warning(self, "脱敏失败", str(ex))
 

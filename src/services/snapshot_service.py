@@ -13,6 +13,14 @@ from src.models.models import Snapshot, Session as SessionRecord
 
 DEFAULT_SNAPSHOT_DIR = Path(__file__).parent.parent.parent / "data" / "snapshots"
 
+# 打包后: 用 %APPDATA%/DataVault/ 存快照
+try:
+    from src.services.database import APP_DATA_DIR
+    DEFAULT_SNAPSHOT_DIR = APP_DATA_DIR / "data" / "snapshots"
+    DEFAULT_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+except (ImportError, NameError):
+    pass
+
 
 class SnapshotService:
     """会话快照管理"""

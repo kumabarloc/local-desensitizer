@@ -26,6 +26,16 @@ DEFAULT_CONFIG = {
 CONFIG_FILE = Path(__file__).parent.parent.parent / "data" / "config.json"
 BACKUP_DIR = Path(__file__).parent.parent.parent / "data" / "backups"
 
+# 打包后: 用 %APPDATA%/DataVault/ 存用户数据
+try:
+    from src.services.database import APP_DATA_DIR
+    CONFIG_FILE = APP_DATA_DIR / "data" / "config.json"
+    BACKUP_DIR = APP_DATA_DIR / "data" / "backups"
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+except (ImportError, NameError):
+    pass  # 导入失败时保持原路径（开发模式应该不会进这里）
+
 
 @dataclass
 class AppConfig:

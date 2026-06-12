@@ -1,5 +1,5 @@
 [project]
-name = "本地数据脱敏与还原工具"
+name = "local-desensitizer"
 version = "0.1.0"
 description = "本地化数据脱敏与还原工具，支持文档脱敏、还原、词库管理"
 requires-python = ">=3.11"
@@ -24,3 +24,11 @@ dev = [
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

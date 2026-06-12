@@ -27,7 +27,9 @@ htmlcov/
 # Data files (keep structure, ignore actual data)
 data/vault.db
 data/*.db
+data/backups/
 data/snapshots/*.json
+data/config.json
 
 # OS
 .DS_Store

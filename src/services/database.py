@@ -41,8 +41,40 @@ def get_engine(db_path: str | Path | None = None):
 
 
 def init_db(engine):
-    """初始化数据库（创建所有表）"""
+    """初始化数据库（创建所有表 + 迁移）"""
     Base.metadata.create_all(engine)
+    _migrate_v040(engine)
+
+
+def _migrate_v040(engine):
+    """v0.4.0 迁移：给 word_entries 加 scope 和 enabled 字段
+
+    设计原则：
+    - 增量式迁移，老库无缝升级（不会重建表/丢数据）
+    - 已有词条默认 scope=USER, enabled=True（保持现有行为）
+    - BUILTIN scope 的词条由 init_builtin_dictionary() 首次启动时插入
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if 'word_entries' not in inspector.get_table_names():
+        return  # 新建库，create_all 已经包含新字段，不需要迁移
+
+    existing_columns = {c['name'] for c in inspector.get_columns('word_entries')}
+
+    with engine.begin() as conn:  # 自动 commit
+        if 'scope' not in existing_columns:
+            conn.execute(text(
+                "ALTER TABLE word_entries ADD COLUMN scope VARCHAR(20) DEFAULT 'USER'"
+            ))
+        if 'enabled' not in existing_columns:
+            conn.execute(text(
+                "ALTER TABLE word_entries ADD COLUMN enabled BOOLEAN DEFAULT 1"
+            ))
+        # 索引（IF NOT EXISTS 防止重复创建报错）
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_scope ON word_entries (scope)"
+        ))
 
 
 def get_session(engine) -> Session:

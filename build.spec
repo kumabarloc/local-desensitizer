@@ -16,6 +16,8 @@ PATHEX = [str(Path('.').resolve())]
 # 数据文件：项目自带的资源字典（运行时 import 用）
 DATAS = [
     ('src/resources/*.py', 'src/resources'),
+    # v0.4.0: 出厂预置全局词典 (首次启动初始化 BUILTIN 用)
+    ('src/resources/default_global_dict.json', 'src/resources'),
     ('assets/icon.ico', 'assets'),
 ]
 

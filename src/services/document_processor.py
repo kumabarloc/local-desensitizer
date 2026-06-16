@@ -11,6 +11,8 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session as DbSession
 
 from src.models.models import WordEntry, Snapshot, Session as SessionRecord
+from src.services.temp_dictionary import TempDictionary, DuplicateInUserDictError
+from src.services.word_library import WordLibraryService
 
 
 @dataclass
@@ -19,7 +21,7 @@ class ReplacementItem:
     original: str
     placeholder: str
     category: str
-    source: str  # "wordlibrary" | "autodetect:PHONE" | ...
+    source: str  # "wordlibrary" | "tempdict" | "autodetect:PHONE" | ...
     positions: list[tuple[int, int]] = field(default_factory=list)  # start, end positions
 
 
@@ -32,7 +34,13 @@ class DesensitizationResult:
 
 
 class DocumentDesensitizer:
-    """文档脱敏处理器"""
+    """文档脱敏处理器
+
+    v0.4.0 词典体系:
+      1. 词库匹配 (USER scope + enabled=True) - 命中即脱敏
+      2. 临时词典匹配 (内存, 文档级) - 命中即脱敏
+      3. 自动规则扫描 (正则) - 命中提示用户确认
+    """
 
     # 自动识别规则
     AUTO_PATTERNS = {
@@ -49,6 +57,37 @@ class DocumentDesensitizer:
 
     def __init__(self, db: DbSession):
         self.db = db
+        # v0.4.0: 临时词典由 DocumentDesensitizer 内部管理
+        # UI 端可通过 desensitizer.temp_dict.add(...) 直接操作
+        self.temp_dict = TempDictionary()
+
+    def refresh_temp_dict_user_lookup(self) -> None:
+        """刷新临时词典的用户词典查询集合
+
+        当用户词典发生变化 (新增/删除/启用切换) 时调用,
+        临时词典的去重判断才能跟得上。
+        """
+        wl = WordLibraryService(self.db)
+        user_entries = wl.get_all_for_desensitization()
+        originals = {e.original for e in user_entries}
+        self.temp_dict.update_user_dict_lookup(originals)
+
+    def clear_temp_dict(self) -> int:
+        """清空临时词典 (文档关闭时调用)
+
+        Returns:
+            清空的条数
+        """
+        return self.temp_dict.clear()
+
+    def add_temp_entry(self, original: str, category: str = "CUSTOM", note: Optional[str] = None):
+        """添加临时词条 (UI 入口)
+
+        Raises:
+            DuplicateInUserDictError: 用户词典已有此 original
+            ValueError: 重复添加或参数错误
+        """
+        return self.temp_dict.add(original, category=category, note=note)
 
     def scan_text(self, text: str) -> tuple[list[ReplacementItem], list[str]]:
         """
@@ -64,9 +103,11 @@ class DocumentDesensitizer:
             for ph in set(format_conflicts):
                 warnings.append(f"检测到原文含有代号格式字符串 '{ph}'")
 
-        # 2. 词库匹配（从长到短排序）
+        # 2. 词库匹配 (只查 USER + enabled, 从长到短排序)
         entries = self.db.execute(
-            select(WordEntry).order_by(func.length(WordEntry.original).desc())
+            select(WordEntry)
+            .where(WordEntry.scope == "USER", WordEntry.enabled == True)  # noqa: E712
+            .order_by(func.length(WordEntry.original).desc())
         ).scalars().all()
 
         for entry in entries:
@@ -87,11 +128,34 @@ class DocumentDesensitizer:
                     positions=positions
                 )
 
-        # 3. 自动规则扫描
+        # 3. 临时词典匹配 (从长到短)
+        temp_entries = sorted(self.temp_dict.get_all(), key=lambda e: len(e.original), reverse=True)
+        for entry in temp_entries:
+            if entry.original in text:
+                # 检查是否已被词库匹配
+                already_matched = any(item.original == entry.original for item in items.values())
+                if not already_matched:
+                    pos = 0
+                    positions = []
+                    while True:
+                        idx = text.find(entry.original, pos)
+                        if idx == -1:
+                            break
+                        positions.append((idx, idx + len(entry.original)))
+                        pos = idx + 1
+                    items[entry.placeholder] = ReplacementItem(
+                        original=entry.original,
+                        placeholder=entry.placeholder,
+                        category=entry.category,
+                        source="tempdict",
+                        positions=positions
+                    )
+
+        # 4. 自动规则扫描
         for rule_name, (pattern, label) in self.AUTO_PATTERNS.items():
             for match in pattern.finditer(text):
                 matched_text = match.group()
-                # 检查是否已被词库匹配
+                # 检查是否已被词库/临时词典匹配
                 already_matched = any(item.original == matched_text for item in items.values())
                 if not already_matched:
                     # 自动规则只收集信息，不写入词库

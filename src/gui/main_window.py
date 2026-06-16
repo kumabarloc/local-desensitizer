@@ -68,12 +68,22 @@ class MainWindow(QMainWindow):
         self.btn_add_word.clicked.connect(self.on_add_word)
         self.btn_import.clicked.connect(self.on_import)
         self.btn_export.clicked.connect(self.on_export)
+        self.btn_export_template.clicked.connect(self.on_export_template)
+        self.btn_copy_to_user.clicked.connect(self.on_copy_builtin_to_user)
         self.btn_backup.clicked.connect(self.on_backup)
         self.btn_word_search.clicked.connect(self.on_search_words)
         self.btn_clear_search.clicked.connect(self.on_clear_search)
         self.word_table.itemSelectionChanged.connect(self.on_word_selection_changed)
         self.btn_delete_word.clicked.connect(self.on_delete_word)
         self.btn_edit_word.clicked.connect(self.on_edit_word)
+
+        # 脱敏 Tab 临时词典
+        self.btn_add_temp.clicked.connect(self.on_add_temp_entry)
+        self.btn_remove_temp.clicked.connect(self.on_remove_temp_entry)
+        self.btn_clear_temp.clicked.connect(self.on_clear_temp_entries)
+        self.temp_dict_list.itemSelectionChanged.connect(
+            lambda: self.btn_remove_temp.setEnabled(bool(self.temp_dict_list.selectedItems()))
+        )
 
         # 脱敏 Tab
         self.btn_select_file_des.clicked.connect(self.on_select_file_desensitize)
@@ -99,20 +109,34 @@ class MainWindow(QMainWindow):
     # ============================================================
 
     def _create_wordlib_tab(self) -> QWidget:
+        """词库管理 Tab (v0.4.0 词典体系)
+
+        三层词典 (Scope 过滤):
+          - 全部: 所有词条
+          - 全局 (BUILTIN): 出厂预置, 只读
+          - 用户 (USER): 用户自己添加/启用的词条, 参与脱敏
+          - 用户未启用: USER scope 但 enabled=False
+
+        表格列: ID | Scope | 分类 | 原始词 | 代号 | 启用 | 命中 | 备注 | 创建时间
+        """
         w = QWidget()
         layout = QVBoxLayout(w)
 
         # 工具栏
         toolbar = QHBoxLayout()
         self.btn_add_word = QPushButton("➕ 新增词条")
-        self.btn_import = QPushButton("📥 批量导入")
-        self.btn_export = QPushButton("📤 导出词库")
+        self.btn_import = QPushButton("📥 导入 CSV")
+        self.btn_export = QPushButton("📤 导出 CSV")
+        self.btn_export_template = QPushButton("📋 下载模板")
+        self.btn_copy_to_user = QPushButton("📥 复制到用户词典")
+        self.btn_copy_to_user.setEnabled(False)
         self.btn_backup = QPushButton("💾 备份词库")
         self.btn_delete_word = QPushButton("🗑️ 删除")
         self.btn_delete_word.setEnabled(False)
         self.btn_edit_word = QPushButton("✏️ 编辑")
         self.btn_edit_word.setEnabled(False)
         for btn in [self.btn_add_word, self.btn_import, self.btn_export,
+                    self.btn_export_template, self.btn_copy_to_user,
                     self.btn_backup, self.btn_delete_word, self.btn_edit_word]:
             toolbar.addWidget(btn)
         toolbar.addStretch()
@@ -123,46 +147,98 @@ class MainWindow(QMainWindow):
         self.word_search_input = QLineEdit()
         self.word_search_input.setPlaceholderText("搜索原始词或备注...")
         self.word_category_filter = QComboBox()
-        self.word_category_filter.addItems(["全部", "PERSON", "COMPANY", "PHONE", "EMAIL",
-                                            "IDCARD", "BANKCARD", "AMOUNT", "PROJECT", "LOCATION", "CUSTOM"])
+        self.word_category_filter.addItems(["全部", "PERSON", "ORG", "COMPANY", "PHONE", "EMAIL",
+                                            "IDCARD", "BANKCARD", "AMOUNT", "IPV4", "PROJECT", "LOCATION", "KEYWORD", "CUSTOM"])
+        # v0.4.0 新增: Scope 过滤器
+        self.word_scope_filter = QComboBox()
+        self.word_scope_filter.addItems(["全部", "全局 (BUILTIN)", "用户 (USER)", "用户未启用"])
         self.btn_word_search = QPushButton("搜索")
         self.btn_clear_search = QPushButton("清除")
         search_layout.addWidget(QLabel("关键字:"))
         search_layout.addWidget(self.word_search_input, stretch=1)
         search_layout.addWidget(QLabel("分类:"))
         search_layout.addWidget(self.word_category_filter)
+        search_layout.addWidget(QLabel("词典:"))
+        search_layout.addWidget(self.word_scope_filter)
         search_layout.addWidget(self.btn_word_search)
         search_layout.addWidget(self.btn_clear_search)
         layout.addLayout(search_layout)
 
-        # 词库表格
+        # 词库表格 (v0.4.0 加 Scope 和 启用 列)
         self.word_table = QTableWidget()
-        self.word_table.setColumnCount(7)
-        self.word_table.setHorizontalHeaderLabels(["ID", "分类", "原始词", "代号", "命中", "备注", "创建时间"])
+        self.word_table.setColumnCount(9)
+        self.word_table.setHorizontalHeaderLabels([
+            "ID", "Scope", "分类", "原始词", "代号", "启用", "命中", "备注", "创建时间"
+        ])
         self.word_table.horizontalHeader().setStretchLastSection(True)
         self.word_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.word_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.word_table.setAlternatingRowColors(True)
         layout.addWidget(self.word_table)
 
-        # 统计栏
+        # 统计栏 (v0.4.0 按 scope 分组统计)
         self.word_stats_label = QLabel("词条数: 0")
         layout.addWidget(self.word_stats_label)
 
         return w
 
-    def _refresh_word_table(self, keyword=None, category=None):
-        results = self.app.wordlib.search(keyword=keyword, category=category)
+    def _refresh_word_table(self, keyword=None, category=None, scope=None):
+        """刷新词库表格 (v0.4.0 支持 scope 过滤)
+
+        scope 取值:
+          - None 或 "全部": 不限
+          - "全局 (BUILTIN)": 只看全局词典
+          - "用户 (USER)": 只看用户词典 (含启用/未启用)
+          - "用户未启用": 只看用户未启用
+        """
+        # 转换 scope 过滤器文本 → 实际值
+        if scope is None:
+            scope_text = self.word_scope_filter.currentText() if hasattr(self, 'word_scope_filter') else "全部"
+        else:
+            scope_text = scope
+
+        if scope_text == "全部":
+            scope_filter = None
+        elif scope_text == "全局 (BUILTIN)":
+            scope_filter = "BUILTIN"
+        elif scope_text in ("用户 (USER)", "用户未启用"):
+            scope_filter = "USER"
+        else:
+            scope_filter = None
+
+        # 查询
+        results = self.app.wordlib.search(keyword=keyword, category=category,
+                                          scope=scope_filter)
+
+        # "用户未启用" 在 DB 层做不到, 在这里过滤
+        if scope_text == "用户未启用":
+            results = [e for e in results if not e.enabled]
+
         self.word_table.setRowCount(len(results))
         for i, entry in enumerate(results):
             self.word_table.setItem(i, 0, QTableWidgetItem(str(entry.id)))
-            self.word_table.setItem(i, 1, QTableWidgetItem(entry.category))
-            self.word_table.setItem(i, 2, QTableWidgetItem(entry.original))
-            self.word_table.setItem(i, 3, QTableWidgetItem(entry.placeholder))
-            self.word_table.setItem(i, 4, QTableWidgetItem(str(entry.hit_count)))
-            self.word_table.setItem(i, 5, QTableWidgetItem(entry.note or ""))
-            self.word_table.setItem(i, 6, QTableWidgetItem(entry.created_at.strftime("%Y-%m-%d %H:%M")))
-        self.word_stats_label.setText(f"词条数: {len(results)}")
+            # Scope 列: BUILTIN/USER
+            scope_label = "🔒 全局" if entry.scope == "BUILTIN" else "✏️ 用户"
+            self.word_table.setItem(i, 1, QTableWidgetItem(scope_label))
+            self.word_table.setItem(i, 2, QTableWidgetItem(entry.category))
+            self.word_table.setItem(i, 3, QTableWidgetItem(entry.original))
+            self.word_table.setItem(i, 4, QTableWidgetItem(entry.placeholder))
+            # 启用列
+            enabled_text = "✅" if entry.enabled else "❌"
+            self.word_table.setItem(i, 5, QTableWidgetItem(enabled_text))
+            self.word_table.setItem(i, 6, QTableWidgetItem(str(entry.hit_count)))
+            self.word_table.setItem(i, 7, QTableWidgetItem(entry.note or ""))
+            self.word_table.setItem(i, 8, QTableWidgetItem(entry.created_at.strftime("%Y-%m-%d %H:%M")))
+
+        # 统计
+        all_builtin = self.app.wordlib.get_all_builtin()
+        all_user = self.app.wordlib.search(scope="USER")
+        user_enabled = self.app.wordlib.get_all_for_desensitization()
+        self.word_stats_label.setText(
+            f"词条数: {len(results)} | "
+            f"全局 {len(all_builtin)} 条 (只读) | "
+            f"用户 {len(all_user)} 条 (启用 {len(user_enabled)})"
+        )
 
     def on_search_words(self):
         keyword = self.word_search_input.text().strip() or None
@@ -173,14 +249,34 @@ class MainWindow(QMainWindow):
     def on_clear_search(self):
         self.word_search_input.clear()
         self.word_category_filter.setCurrentIndex(0)
+        self.word_scope_filter.setCurrentIndex(0)
         self._refresh_word_table()
 
     def on_word_selection_changed(self):
-        # PyQt6 兼容写法：QTableWidget 没有 selectedRows()，
-        # 要用 selectionModel().selectedRows()
-        has_selection = bool(self.word_table.selectionModel().selectedRows())
+        """选中行变化时切换按钮状态
+
+        v0.4.0:
+          - 选中 BUILTIN: 启用复制按钮, 禁用编辑/删除 (BUILTIN 只读)
+          - 选中 USER: 启用编辑/删除
+        """
+        selected = self.word_table.selectionModel().selectedRows()
+        has_selection = bool(selected)
         self.btn_delete_word.setEnabled(has_selection)
         self.btn_edit_word.setEnabled(has_selection)
+
+        # 判断选中行是不是 BUILTIN
+        is_builtin = False
+        if selected:
+            row = selected[0].row()
+            scope_item = self.word_table.item(row, 1)
+            if scope_item and "全局" in scope_item.text():
+                is_builtin = True
+
+        # BUILTIN 行: 只允许复制, 不允许编辑/删除
+        self.btn_copy_to_user.setEnabled(is_builtin)
+        if is_builtin:
+            self.btn_edit_word.setEnabled(False)
+            self.btn_delete_word.setEnabled(False)
 
     def on_add_word(self):
         dlg = AddWordDialog(self)
@@ -189,25 +285,34 @@ class MainWindow(QMainWindow):
             category = dlg.category_combo.currentText()
             note = dlg.note_input.text().strip()
             try:
-                self.app.wordlib.add_entry(original, category=category, note=note)
+                self.app.wordlib.add_entry(original, category=category, note=note, scope="USER", enabled=True)
+                # v0.4.0: 同步临时词典的用户词典查询
+                self.app.desensitizer.refresh_temp_dict_user_lookup()
                 self.statusBar().showMessage(f"已添加: {original} → [{category}_N]", 3000)
                 self._refresh_word_table()
             except Exception as ex:
                 QMessageBox.warning(self, "添加失败", str(ex))
 
     def on_edit_word(self):
+        """编辑词条 (v0.4.0 适配新列号 + BUILTIN 拦截)"""
         row = self.word_table.currentRow()
         if row < 0:
             return
         entry_id = int(self.word_table.item(row, 0).text())
-        current_category = self.word_table.item(row, 1).text()
-        current_note = self.word_table.item(row, 5).text()
-        current_original = self.word_table.item(row, 2).text()
+        scope_text = self.word_table.item(row, 1).text()
+        current_category = self.word_table.item(row, 2).text()  # 列号 +1
+        current_note = self.word_table.item(row, 7).text()       # 列号 +2 (跳过启用+命中)
+        current_original = self.word_table.item(row, 3).text()   # 列号 +1
+
+        # BUILTIN 不允许编辑
+        if "全局" in scope_text:
+            QMessageBox.information(self, "全局词典",
+                "全局词典词条为只读,不能直接编辑。\n如需修改,请先\"复制到用户词典\"。")
+            return
 
         dlg = EditWordDialog(current_original, current_category, current_note, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             try:
-                # 更新备注（不能改 original 和 placeholder）
                 from src.models.models import WordEntry
                 entry = self.app.db.get(WordEntry, entry_id)
                 if entry:
@@ -223,6 +328,14 @@ class MainWindow(QMainWindow):
         rows = sorted([r.row() for r in self.word_table.selectedRows()], reverse=True)
         if not rows:
             return
+        # 拦截: 包含 BUILTIN 不让删
+        for row in rows:
+            scope_item = self.word_table.item(row, 1)
+            if scope_item and "全局" in scope_item.text():
+                QMessageBox.warning(self, "不能删除",
+                    "选中的行包含全局词典词条,不能删除。\n如需去除,只能\"复制到用户词典\"后修改。")
+                return
+
         reply = QMessageBox.question(self, "确认删除",
             f"确定要删除选中的 {len(rows)} 个词条吗？\n删除后不可恢复。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -233,43 +346,112 @@ class MainWindow(QMainWindow):
                     self.app.wordlib.delete_entry(entry_id)
                 except Exception:
                     pass
+            # v0.4.0: 同步临时词典的用户词典查询
+            self.app.desensitizer.refresh_temp_dict_user_lookup()
             self._refresh_word_table()
             self.statusBar().showMessage(f"已删除 {len(rows)} 个词条", 3000)
 
-    def on_import(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "选择导入文件", "",
-            "Excel/CSV (*.xlsx *.csv);;所有文件 (*.*)")
-        if path:
+    def on_copy_builtin_to_user(self):
+        """把选中的 BUILTIN 词条复制为 USER 词条"""
+        from src.services.word_library import OriginalWordConflictError
+        rows = sorted([r.row() for r in self.word_table.selectedRows()])
+        if not rows:
+            return
+        success, skipped = 0, 0
+        for row in rows:
+            scope_item = self.word_table.item(row, 1)
+            if not scope_item or "全局" not in scope_item.text():
+                continue  # 只处理 BUILTIN
+            entry_id = int(self.word_table.item(row, 0).text())
             try:
-                result = self.app.batch_import(Path(path))
-                QMessageBox.information(self, "导入完成",
-                    f"总计行数: {result.total_rows}\n导入成功: {result.imported}\n跳过: {result.skipped}\n\n" +
-                    (f"错误:\n" + "\n".join(result.errors[:5]) if result.errors else ""))
-                self._refresh_word_table()
+                new_entry = self.app.wordlib.copy_builtin_to_user(entry_id)
+                success += 1
+            except OriginalWordConflictError:
+                skipped += 1
             except Exception as ex:
-                QMessageBox.warning(self, "导入失败", str(ex))
+                QMessageBox.warning(self, "复制失败", f"ID={entry_id}: {ex}")
+                return
+        # v0.4.0: 同步临时词典的用户词典查询
+        self.app.desensitizer.refresh_temp_dict_user_lookup()
+        self._refresh_word_table()
+        msg = f"已复制 {success} 条全局词条到用户词典"
+        if skipped:
+            msg += f", 跳过 {skipped} 条 (用户词典已有)"
+        self.statusBar().showMessage(msg, 5000)
+        QMessageBox.information(self, "复制完成", msg)
+
+    def on_import(self):
+        """v0.4.0: 导入 CSV (走 dictionary_io 服务)"""
+        from src.services.dictionary_io import import_from_csv, CSVFormatError
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择 CSV 文件", "",
+            "CSV 文件 (*.csv);;所有文件 (*.*)")
+        if not path:
+            return
+        try:
+            result = import_from_csv(self.app.db, Path(path))
+            # v0.4.0: 同步临时词典的用户词典查询
+            self.app.desensitizer.refresh_temp_dict_user_lookup()
+            msg = f"导入完成:\n成功 {result['imported']} 条\n跳过 {result['skipped']} 条 (重复)"
+            if result["errors"]:
+                err_lines = "\n".join(
+                    f"  L{e['line']}: {e['reason']}" for e in result["errors"][:10]
+                )
+                msg += f"\n错误 {len(result['errors'])} 条 (前10):\n{err_lines}"
+            QMessageBox.information(self, "导入完成", msg)
+            self._refresh_word_table()
+        except (CSVFormatError, FileNotFoundError) as ex:
+            QMessageBox.warning(self, "导入失败", str(ex))
+        except Exception as ex:
+            QMessageBox.warning(self, "导入失败", f"未知错误: {ex}")
 
     def on_export(self):
+        """v0.4.0: 导出 CSV (走 dictionary_io 服务)"""
+        from src.services.dictionary_io import export_to_csv
+        # 默认导出 USER scope (用户真正在用的)
+        scope_filter, _ = QFileDialog.getSaveFileName
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出词库", "",
-            "Excel (*.xlsx);;CSV (*.csv)")
-        if path:
-            try:
-                import pandas as pd
-                all_entries = self.app.wordlib.search()
-                df = pd.DataFrame([{
-                    "original": e.original,
-                    "category": e.category,
-                    "placeholder": e.placeholder,
-                    "note": e.note or "",
-                    "hit_count": e.hit_count,
-                    "created_at": e.created_at.isoformat(),
-                } for e in all_entries])
-                df.to_excel(path, index=False) if path.endswith('.xlsx') else df.to_csv(path, index=False)
-                self.statusBar().showMessage(f"已导出 {len(all_entries)} 条词条", 3000)
-            except Exception as ex:
-                QMessageBox.warning(self, "导出失败", str(ex))
+            self, "导出词库", "user_dictionary.csv",
+            "CSV 文件 (*.csv);;所有文件 (*.*)")
+        if not path:
+            return
+        # 确保 .csv 后缀
+        if not path.lower().endswith('.csv'):
+            path += '.csv'
+
+        # 询问导出的 scope
+        from PyQt6.QtWidgets import QInputDialog
+        scopes = ["用户 (USER)", "全局 (BUILTIN)", "全部"]
+        scope_choice, ok = QInputDialog.getItem(self, "选择导出范围", "导出哪个词典的词条?", scopes, 0, False)
+        if not ok:
+            return
+        scope_arg = {"用户 (USER)": "USER", "全局 (BUILTIN)": "BUILTIN", "全部": None}[scope_choice]
+
+        try:
+            count = export_to_csv(self.app.db, path, scope=scope_arg)
+            self.statusBar().showMessage(f"已导出 {count} 条词条到 {Path(path).name}", 5000)
+            QMessageBox.information(self, "导出完成",
+                f"已导出 {count} 条词条到:\n{path}")
+        except Exception as ex:
+            QMessageBox.warning(self, "导出失败", str(ex))
+
+    def on_export_template(self):
+        """下载 CSV 导入模板"""
+        from src.services.dictionary_io import generate_csv_template
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存模板", "dict_template.csv",
+            "CSV 文件 (*.csv);;所有文件 (*.*)")
+        if not path:
+            return
+        if not path.lower().endswith('.csv'):
+            path += '.csv'
+        try:
+            generate_csv_template(path)
+            self.statusBar().showMessage(f"模板已保存到 {Path(path).name}", 5000)
+            QMessageBox.information(self, "模板已生成",
+                f"模板已保存到:\n{path}\n\n请用 Excel 打开编辑后,再通过\"导入 CSV\"加载。")
+        except Exception as ex:
+            QMessageBox.warning(self, "生成失败", str(ex))
 
     def on_backup(self):
         backup_path = self.app.backup()
@@ -283,8 +465,18 @@ class MainWindow(QMainWindow):
     # ============================================================
 
     def _create_desensitize_tab(self) -> QWidget:
+        """脱敏 Tab (v0.4.0 加临时词典侧边栏 + 右键添加)"""
+        from PyQt6.QtWidgets import QSplitter
         w = QWidget()
-        layout = QVBoxLayout(w)
+        outer = QHBoxLayout(w)
+
+        # 左右分栏: 主区 | 临时词典侧边栏
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        outer.addWidget(splitter)
+
+        # === 左侧主区 ===
+        main_widget = QWidget()
+        layout = QVBoxLayout(main_widget)
 
         # 文件选择
         file_layout = QHBoxLayout()
@@ -315,10 +507,12 @@ class MainWindow(QMainWindow):
         layout.addLayout(output_layout)
 
         # 脱敏预览
-        preview_group = QGroupBox("脱敏预览")
+        preview_group = QGroupBox("脱敏预览 (右键选中文字可加入临时词典)")
         preview_layout = QVBoxLayout()
         self.desensitize_preview = QTextEdit()
         self.desensitize_preview.setReadOnly(True)
+        self.desensitize_preview.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.desensitize_preview.customContextMenuRequested.connect(self.on_preview_context_menu)
         preview_layout.addWidget(self.desensitize_preview)
         preview_group.setLayout(preview_layout)
         layout.addWidget(preview_group, stretch=2)
@@ -332,7 +526,127 @@ class MainWindow(QMainWindow):
         confirm_group.setLayout(confirm_layout)
         layout.addWidget(confirm_group, stretch=1)
 
+        splitter.addWidget(main_widget)
+
+        # === 右侧临时词典侧边栏 ===
+        temp_widget = QWidget()
+        temp_layout = QVBoxLayout(temp_widget)
+
+        temp_title = QLabel("📝 本次文档临时词条")
+        temp_title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        temp_layout.addWidget(temp_title)
+
+        temp_hint = QLabel(
+            "临时词条仅在本文档有效,\n关闭后自动清空。\n如需长期使用,请加入用户词典。"
+        )
+        temp_hint.setStyleSheet("color: gray; font-size: 11px;")
+        temp_hint.setWordWrap(True)
+        temp_layout.addWidget(temp_hint)
+
+        # 临时词条列表
+        self.temp_dict_list = QListWidget()
+        temp_layout.addWidget(self.temp_dict_list, stretch=1)
+
+        # 临时词典操作按钮
+        temp_btn_layout = QHBoxLayout()
+        self.btn_add_temp = QPushButton("➕ 添加")
+        self.btn_remove_temp = QPushButton("🗑️ 移除选中")
+        self.btn_clear_temp = QPushButton("🧹 清空")
+        self.btn_remove_temp.setEnabled(False)
+        temp_btn_layout.addWidget(self.btn_add_temp)
+        temp_btn_layout.addWidget(self.btn_remove_temp)
+        temp_btn_layout.addWidget(self.btn_clear_temp)
+        temp_layout.addLayout(temp_btn_layout)
+
+        # 临时词典计数
+        self.temp_dict_count_label = QLabel("临时词条: 0 条")
+        temp_layout.addWidget(self.temp_dict_count_label)
+
+        splitter.addWidget(temp_widget)
+        splitter.setSizes([700, 280])  # 初始比例 7:3
+
         return w
+
+    def on_preview_context_menu(self, pos):
+        """脱敏预览右键菜单: 加入临时词典"""
+        from PyQt6.QtGui import QCursor, QAction
+        cursor = self.desensitize_preview.textCursor()
+        selected = cursor.selectedText().strip()
+        if not selected:
+            return  # 没选中文本, 不弹菜单
+
+        menu = QMenu(self.desensitize_preview)
+        add_action = QAction(f"➕ \"{selected[:20]}{'...' if len(selected) > 20 else ''}\" 加入临时词典", self)
+        add_action.triggered.connect(lambda: self._add_temp_entry_from_selection(selected))
+        menu.addAction(add_action)
+        menu.exec(QCursor.pos())
+
+    def _add_temp_entry_from_selection(self, text: str):
+        """从选中文本添加临时词条"""
+        from src.services.temp_dictionary import DuplicateInUserDictError
+        try:
+            entry = self.app.desensitizer.add_temp_entry(text, category="CUSTOM", note="从预览添加")
+            self._refresh_temp_dict_list()
+            self.statusBar().showMessage(f"已加入临时词典: {text} -> {entry.placeholder}", 3000)
+        except DuplicateInUserDictError as ex:
+            QMessageBox.information(self, "提示", str(ex))
+        except ValueError as ex:
+            QMessageBox.warning(self, "添加失败", str(ex))
+
+    def _refresh_temp_dict_list(self):
+        """刷新临时词条列表"""
+        self.temp_dict_list.clear()
+        for entry in self.app.desensitizer.temp_dict.get_all():
+            display = f"{entry.original}  →  {entry.placeholder}"
+            if entry.note:
+                display += f"  ({entry.note})"
+            item = QListWidgetItem(display)
+            item.setData(Qt.ItemDataRole.UserRole, entry.original)
+            self.temp_dict_list.addItem(item)
+        count = len(self.app.desensitizer.temp_dict)
+        self.temp_dict_count_label.setText(f"临时词条: {count} 条")
+
+    def on_add_temp_entry(self):
+        """手动添加临时词条 (弹输入框)"""
+        from src.services.temp_dictionary import DuplicateInUserDictError
+        from PyQt6.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getText(self, "添加临时词条", "原始词:")
+        if not ok or not text.strip():
+            return
+        # 选 category
+        category, ok2 = QInputDialog.getItem(
+            self, "选择分类", "分类:",
+            ["PERSON", "ORG", "KEYWORD", "CUSTOM", "LOCATION"], 3, False
+        )
+        if not ok2:
+            return
+        try:
+            self.app.desensitizer.add_temp_entry(text.strip(), category=category, note="手动添加")
+            self._refresh_temp_dict_list()
+        except DuplicateInUserDictError as ex:
+            QMessageBox.information(self, "提示", str(ex))
+        except ValueError as ex:
+            QMessageBox.warning(self, "添加失败", str(ex))
+
+    def on_remove_temp_entry(self):
+        """移除选中的临时词条"""
+        for item in self.temp_dict_list.selectedItems():
+            original = item.data(Qt.ItemDataRole.UserRole)
+            self.app.desensitizer.temp_dict.remove(original)
+        self._refresh_temp_dict_list()
+
+    def on_clear_temp_entries(self):
+        """清空所有临时词条"""
+        count = len(self.app.desensitizer.temp_dict)
+        if count == 0:
+            return
+        reply = QMessageBox.question(self, "确认清空",
+            f"确定要清空全部 {count} 条临时词条吗？\n(关闭文档时也会自动清空)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.app.desensitizer.clear_temp_dict()
+            self._refresh_temp_dict_list()
+            self.statusBar().showMessage("临时词典已清空", 3000)
 
     def _create_restore_tab(self) -> QWidget:
         """文档还原 Tab"""

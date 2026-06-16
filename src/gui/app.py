@@ -17,6 +17,7 @@ from src.services.snapshot_service import SnapshotService, SessionService
 from src.services.restore_service import RestoreService
 from src.services.settings_service import SettingsService
 from src.services.batch_import import BatchImportService
+from src.services.dictionary_init import init_builtin_dictionary
 
 
 def get_app_icon_path() -> Path:
@@ -47,6 +48,11 @@ class AppService:
 
         # 批量导入
         self.batch_import_svc = BatchImportService(self.wordlib)
+
+        # v0.4.0: 首次启动初始化 BUILTIN 词典 (幂等)
+        self.builtin_count = init_builtin_dictionary(self.db)
+        # 初始化临时词典的用户词典查询集合
+        self.desensitizer.refresh_temp_dict_user_lookup()
 
     def backup(self):
         return self.settings.auto_backup_if_enabled()

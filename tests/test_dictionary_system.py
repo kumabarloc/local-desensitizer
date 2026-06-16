@@ -93,9 +93,13 @@ class TestDatabaseMigration:
         assert 'enabled' in cols
 
     def test_migrate_old_db_adds_columns(self):
-        """老库 (8字段) → 新库 (10字段)"""
+        """老库 (8字段) → 新库 (10字段)
+
+        Windows 注意：sqlite 打开后文件被锁, 删除前必须 engine.dispose()
+        """
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
             path = f.name
+        engine = None
         try:
             engine = create_engine(f"sqlite:///{path}")
 
@@ -137,7 +141,11 @@ class TestDatabaseMigration:
                 assert row[2] == 1  # 默认 True (SQLite BOOLEAN -> INTEGER)
 
         finally:
-            os.unlink(path)
+            # 关键: 先 dispose engine 释放文件锁, Windows 上才能删
+            if engine is not None:
+                engine.dispose()
+            if os.path.exists(path):
+                os.unlink(path)
 
     def test_migrate_is_idempotent(self, engine):
         """迁移跑两次不会报错"""
